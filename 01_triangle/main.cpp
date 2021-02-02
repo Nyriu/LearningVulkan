@@ -1,3 +1,4 @@
+#include <vulkan/vk_platform.h>
 #include <vulkan/vulkan_core.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -23,6 +24,33 @@ const std::vector<const char*> validationLayers = {
 #endif
 
 
+
+//We have to look up its address ourselves using vkGetInstanceProcAddr.
+//We're going to create our own proxy function that handles this in the background.
+VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo,
+    const VkAllocationCallbacks *pAllocator, VkDebugUtilsMessengerEXT *pDebugMessenger) {
+  auto func = (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
+  if (func != nullptr) {
+    return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
+  } else {
+    return VK_ERROR_EXTENSION_NOT_PRESENT;
+  }
+}
+
+void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger,
+    const VkAllocationCallbacks* pAllocator) {
+    auto func = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
+    if (func != nullptr) {
+        func(instance, debugMessenger, pAllocator);
+    }
+}
+
+
+
+
+
+
+
 class HelloTriangleApplication {
 public:
     void run() {
@@ -35,6 +63,7 @@ public:
 private:
     GLFWwindow* window;
     VkInstance instance;
+    VkDebugUtilsMessengerEXT debugMessenger;
 
     void initWindow() {
       glfwInit();
@@ -47,8 +76,32 @@ private:
 
     void initVulkan() {
       createInstance();
+      setupDebugMessenger();
 
     }
+
+    void setupDebugMessenger() {
+      if (!enableValidationLayers) return;
+
+      VkDebugUtilsMessengerCreateInfoEXT createInfo{};
+      createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+      createInfo.messageSeverity =
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+      createInfo.messageType =
+        VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT    |
+        VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+      createInfo.pfnUserCallback = debugCallback;
+      createInfo.pUserData = nullptr;
+
+      if (CreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &debugMessenger) != VK_SUCCESS) {
+        throw std::runtime_error("failed to set up debug messenger!");
+      }
+
+    }
+
 
     bool checkValidationLayerSupport() {
       uint32_t layerCount;
@@ -74,6 +127,32 @@ private:
     }
 
 
+    std::vector<const char*> getRequiredExtensions() {
+      uint32_t glfwExtensionCount = 0;
+      const char **glfwExtensions;
+      glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+
+      std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
+
+      if (enableValidationLayers) {
+        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+      }
+      return extensions;
+    }
+
+    //PFN_vkDebugUtilsMessengerCallbackEXT
+    // https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/PFN_vkDebugUtilsMessengerCallbackEXT.html
+    static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
+        VkDebugUtilsMessageSeverityFlagBitsEXT           messageSeverity,
+        VkDebugUtilsMessageTypeFlagsEXT                  messageTypes,
+        const VkDebugUtilsMessengerCallbackDataEXT*      pCallbackData,
+        void*                                            pUserData) {
+      std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
+      return VK_FALSE;
+    }
+
+
+
     void createInstance() {
       if (enableValidationLayers && !checkValidationLayerSupport()) {
         throw std::runtime_error("validation layers requested, but not available!");
@@ -90,15 +169,10 @@ private:
       VkInstanceCreateInfo createInfo{};
       createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
       createInfo.pApplicationInfo = &appInfo;
-      //Vulkan is a platform agnostic API so we need an extension to interface with
-      //the window system. GLFW has built-in function that returns the extension(s)
-      uint32_t glfwExtensionCount = 0;
-      const char **glfwExtensions;
 
-      glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-
-      createInfo.enabledExtensionCount   = glfwExtensionCount;
-      createInfo.ppEnabledExtensionNames = glfwExtensions;
+      auto extensions = getRequiredExtensions();
+      createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+      createInfo.ppEnabledExtensionNames = extensions.data();
 
       if (enableValidationLayers) {
         createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
@@ -106,29 +180,6 @@ private:
       } else {
         createInfo.enabledLayerCount = 0;
       }
-
-
-      // Check for extension support
-      uint32_t extensionCount = 0;
-      vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
-      std::vector<VkExtensionProperties> extensions(extensionCount);
-      vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensions.data());
-
-      std::cout << "extensionCount: " << extensionCount << std::endl;
-      std::cout << "available extensions: " << std::endl;
-      for (const auto &extension : extensions) {
-        std::cout << "\t" << extension.extensionName << std::endl;
-      }
-
-      // Check for required extensions
-      std::cout << "glfwExtensionCount: " << glfwExtensionCount << std::endl;
-      const char **ptr = glfwExtensions;
-      for (int i=0; i < glfwExtensionCount; i++) {
-        std::cout << *ptr++ << std::endl;
-      }
-
-
-
 
       //VkResult result = vkCreateInstance(&createInfo, nullptr, &instance);
       if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) {
@@ -144,6 +195,10 @@ private:
     }
 
     void cleanup() {
+      if (enableValidationLayers) {
+        DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
+      }
+
       vkDestroyInstance(instance, nullptr);
 
       glfwDestroyWindow(window);
