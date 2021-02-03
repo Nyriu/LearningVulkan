@@ -64,6 +64,7 @@ private:
     GLFWwindow* window;
     VkInstance instance;
     VkDebugUtilsMessengerEXT debugMessenger;
+    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 
     void initWindow() {
       glfwInit();
@@ -77,14 +78,51 @@ private:
     void initVulkan() {
       createInstance();
       setupDebugMessenger();
+      pickPhysicalDevice();
 
+    }
+
+    bool isDeviceSuitable(VkPhysicalDevice device) {
+      // Basic infos
+      VkPhysicalDeviceProperties deviceProperties;
+      vkGetPhysicalDeviceProperties(device, &deviceProperties);
+      // Optional infos
+      VkPhysicalDeviceFeatures deviceFeatures;
+      vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
+      return
+        deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
+        deviceFeatures.geometryShader;
+      // it's possible to rate the GPUs and use the best
+    }
+    
+    void pickPhysicalDevice() {
+      uint32_t deviceCount = 0;
+      vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+
+      if (deviceCount == 0) {
+        throw std::runtime_error("failed to find GPUs with Vulkan support!");
+      }
+      std::vector<VkPhysicalDevice> devices(deviceCount);
+      vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+
+      for (const auto &device : devices) {
+        if (isDeviceSuitable(device)) {
+          physicalDevice = device;
+          break;
+        }
+      }
+
+      if (physicalDevice == VK_NULL_HANDLE) {
+        throw std::runtime_error("failed to find suitable GPU!");
+      }
     }
 
     void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &createInfo) {
       createInfo = {};
       createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
       createInfo.messageSeverity =
-        VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+        //VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
         VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
         VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
       createInfo.messageType =
