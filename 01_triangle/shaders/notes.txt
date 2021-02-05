@@ -1,0 +1,4 @@
+Compiling shaders on the commandline is one of the most straightforward options and it's the one that we'll use in this tutorial, but it's also possible to compile shaders directly from your own code.
+The Vulkan SDK includes libshaderc, which is a library to compile GLSL code to SPIR-V from within your program.
+
+https://github.com/google/shaderc
