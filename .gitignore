@@ -2,3 +2,4 @@ TODO.txt
 VulkanTest
 main
 build/
+.cache
